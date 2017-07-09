@@ -1,4 +1,3 @@
-//Github:
 // WhiteBox Labs -- Tentacle Shield -- I2C example
 // www.whiteboxes.ch
 //
@@ -35,7 +34,21 @@
 //---------------------------------------------------------------------------------------------
 
 //#include <Wire.h>                     // enable I2C necessary for arduino but not particle photon
+#include <DS18B20.h>
+#include <math.h>
 
+const int      MAXRETRY          = 4;
+const uint32_t msSAMPLE_INTERVAL = 2500;
+const uint32_t msMETRIC_PUBLISH  = 30000;
+
+DS18B20  ds18b20(D4, true); //Sets Pin D2 for Water Temp Sensor and
+                            // this is the only sensor on bus
+
+char     szInfo[64];
+double   celsius;
+double   fahrenheit;
+uint32_t msLastMetric;
+uint32_t msLastSample;
 char sensordata[30];                  // A 30 byte character array to hold incoming data from the sensors
 byte sensor_bytes_received = 0;       // We need to know how many characters bytes have been received
 
@@ -58,12 +71,27 @@ char *channel_names[] = {"ORP", "PH"}; // <-- CHANGE THIS.
 void setup() {                      // startup function
   Serial.begin(9600);	            // Set the hardware serial port.
   Wire.begin();			    // enable I2C port.
+  Particle.variable("poolTemp", fahrenheit);
+  Serial.begin(115200);
 }
 
 
-
 void loop() {
+  //-------------------------------------
+  //get and send temp
+  //-------------------------------------
+  if (millis() - msLastSample >= msSAMPLE_INTERVAL){
+    getTemp();
+  }
 
+  if (millis() - msLastMetric >= msMETRIC_PUBLISH){
+    Serial.println("Publishing now.");
+    publishTempData();
+  }
+
+  //-------------------------------------
+  //get and send pH and ORP
+  //-------------------------------------
   for (int channel = 0; channel < TOTAL_CIRCUITS; channel++) {       // loop through all the sensors
 
     Wire.beginTransmission(channel_ids[channel]);     // call the circuit by its ID number.
@@ -96,7 +124,7 @@ void loop() {
     switch (code) {                  	    // switch case based on what the response code is.
       case 1:                       	    // decimal 1  means the command was successful.
         Serial.println(sensordata);       // print the actual reading
-        Spark.publish(channel_names[channel], sensordata);
+        Particle.publish(channel_names[channel], sensordata);
         break;                        	    // exits the switch case.
 
       case 2:                        	    // decimal 2 means the command has failed.
@@ -109,10 +137,39 @@ void loop() {
 
       case 255:                      	    // decimal 255 means there is no further data to send.
         Serial.println("no data");          // print the error
-        Spark.publish("poolmon2", "No Data");
+        Particle.publish("poolmon2", "No Data");
         break;                         	    // exits the switch case.
     }
 
   } // for loop
 delay(10000);
+}
+
+void publishTempData(){
+  if(!ds18b20.crcCheck()){      //make sure the value is correct
+    return;
+  }
+  sprintf(szInfo, "%2.2f", fahrenheit);
+  Particle.publish("dsTmp", szInfo, PRIVATE);
+  msLastMetric = millis();
+}
+
+void getTemp(){
+  float _temp;
+  int   i = 0;
+
+  do {
+    _temp = ds18b20.getTemperature();
+  } while (!ds18b20.crcCheck() && MAXRETRY > i++);
+
+  if (i < MAXRETRY) {
+    celsius = _temp;
+    fahrenheit = ds18b20.convertToFahrenheit(_temp);
+    Serial.println(fahrenheit);
+  }
+  else {
+    celsius = fahrenheit = NAN;
+    Serial.println("Invalid reading");
+  }
+  msLastSample = millis();
 }
