@@ -87,11 +87,20 @@ void loop() {
   if (millis() - msLastMetric >= msMETRIC_PUBLISH){
     Serial.println("Publishing now.");
     publishTempData();
+    getPublishProbes();
   }
+}
 
-  //-------------------------------------
-  //get and send pH and ORP
-  //-------------------------------------
+void publishTempData(){
+  if(!ds18b20.crcCheck()){      //make sure the value is correct
+    return;
+  }
+  sprintf(szInfo, "%2.2f", fahrenheit);
+  Particle.publish("dsTmp", szInfo, PRIVATE);
+  msLastMetric = millis();
+}
+
+void getPublishProbes(){
   for (int channel = 0; channel < TOTAL_CIRCUITS; channel++) {       // loop through all the sensors
 
     Wire.beginTransmission(channel_ids[channel]);     // call the circuit by its ID number.
@@ -142,16 +151,6 @@ void loop() {
     }
 
   } // for loop
-delay(10000);
-}
-
-void publishTempData(){
-  if(!ds18b20.crcCheck()){      //make sure the value is correct
-    return;
-  }
-  sprintf(szInfo, "%2.2f", fahrenheit);
-  Particle.publish("dsTmp", szInfo, PRIVATE);
-  msLastMetric = millis();
 }
 
 void getTemp(){
